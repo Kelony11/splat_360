@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homework 3 (Section 2): 3D Gaussian Splatting</title>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 1.2rem;
+        }
+
+        p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+    </style>
+
+    <script type="importmap">
+    {
+      "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.183.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.1/examples/jsm/",
+            "@mkkellogg/gaussian-splats-3d": "./gaussian-splats-3d.module.js"
+      }
+    }
+  </script>
+</head>
+
+<body>
+    <div id="overlay">
+        <h1>Homework 3 (Section 2): 3D Gaussian Splatting</h1>
+        <div style="margin-top: 10px;">
+            <span style="font-size: 0.9rem;">Rendering Mode: </span><br>
+            <button id="modePointBtn" style="pointer-events: auto; padding: 5px 10px;">Point</button>
+            <button id="modeEllipsoidBtn" style="pointer-events: auto; padding: 5px 10px;">Ellipsoid</button>
+            <button id="modeSplatBtn" style="pointer-events: auto; padding: 5px 10px;">Splat</button>
+            <br><button id="resetViewBtn" style="pointer-events: auto; margin-top: 10px; padding: 5px 10px;">Reset
+                View</button>
+        </div>
+    </div>
+
+
+    <script type="module">
+        import * as THREE from 'three';
+        import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
+
+        // Initialize Viewer
+        const viewer = new GaussianSplats3D.Viewer({
+            'cameraUp': [0, 1, 0],
+            'initialCameraPosition': [0, 1.6, 5],
+            'initialCameraLookAt': [0, 1.6, 0],
+            'sharedMemoryForWorkers': false,
+            'useBuiltInControls': true,
+            'renderMode': GaussianSplats3D.RenderMode.OnChange
+        });
+
+        // Load Scene
+        viewer.addSplatScene('./truck_small.splat', {
+            'splatAlphaRemovalThreshold': 1,
+            'showLoadingUI': true,
+            'position': [0, 0, 0],
+            'rotation': [0.996, 0, 0, 0.0896],
+            'scale': [1.31, 1.31, 1.31]
+        }).then(() => {
+            viewer.start();
+
+            const boxes = [
+                { pos: [0.55, 0.82, -0.05], color: 0xff0000 },
+                { pos: [0.80, 0.82, -0.05], color: 0x00ff00 },
+                { pos: [1.05, 0.82, -0.05], color: 0x0000ff },
+                { pos: [0.68, 1.05,  0.10], color: 0xffff00 },
+                { pos: [0.92, 0.82,  0.18], color: 0xff00ff }
+            ];
+
+            boxes.forEach((b) => {
+                const cube = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.25, 0.25, 0.25),
+                    new THREE.MeshBasicMaterial({ color: b.color })
+                );
+                cube.position.set(...b.pos);
+                viewer.threeScene.add(cube);
+            });
+
+            viewer.forceRenderNextFrame();
+
+            // Render Mode Button Listeners
+            document.getElementById('modePointBtn').addEventListener('click', () => {
+                if (viewer.splatMesh) {
+                    viewer.splatMesh.setPointCloudModeEnabled(true);
+                    viewer.splatMesh.setEllipsoidModeEnabled(false);
+                    viewer.forceRenderNextFrame();
+                }
+            });
+            document.getElementById('modeEllipsoidBtn').addEventListener('click', () => {
+                if (viewer.splatMesh) {
+                    viewer.splatMesh.setPointCloudModeEnabled(false);
+                    viewer.splatMesh.setEllipsoidModeEnabled(true);
+                    viewer.forceRenderNextFrame();
+                }
+            });
+            document.getElementById('modeSplatBtn').addEventListener('click', () => {
+                if (viewer.splatMesh) {
+                    viewer.splatMesh.setPointCloudModeEnabled(false);
+                    viewer.splatMesh.setEllipsoidModeEnabled(false);
+                    viewer.forceRenderNextFrame();
+                }
+            });
+
+            // Reset View Button Listener
+            document.getElementById('resetViewBtn').addEventListener('click', () => {
+                viewer.camera.position.set(0, 1.6, 5);
+                viewer.camera.lookAt(0, 1.6, 0);
+                if (viewer.controls) {
+                    viewer.controls.target.set(0, 1.6, 0);
+                    viewer.controls.update();
+                }
+                viewer.forceRenderNextFrame();
+            });
+        });
+
+
+    </script>
+</body>
+
+</html>

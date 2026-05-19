@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Homework 3 (Section 1): 360 Image/Video Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            pointer-events: none;
+        }
+
+        h1 {
+            margin: 0 0 5px 0;
+            font-size: 1.2rem;
+        }
+
+        p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        #status {
+            color: #ffff00;
+            font-weight: bold;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 5px 15px;
+            cursor: pointer;
+            border: 1px solid #666;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-radius: 4px;
+            pointer-events: auto;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .option-row {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9rem;
+            pointer-events: auto;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #ccc;
+            margin-right: 5px;
+        }
+
+        label {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .action-row {
+            margin-top: 10px;
+            text-align: center;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="overlay">
+        <h1>Homework 3 (Section 1): 360 Viewer</h1>
+        <div class="option-row">
+            <span class="label">Geometry:</span>
+            <label><input type="radio" name="geometry" value="sphere" checked> Sphere</label>
+            <label><input type="radio" name="geometry" value="box"> Box</label>
+        </div>
+        <div class="option-row">
+            <span class="label">View:</span>
+            <label><input type="radio" name="view" value="inside" checked> Inside</label>
+            <label><input type="radio" name="view" value="outside"> Outside</label>
+        </div>
+        <div class="action-row">
+            <button id="Reset">Reset View</button>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.183.1/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.1/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let camera, scene, renderer;
+        let currentMesh;
+        let textureEquirect, textureAtlas;
+        let video;
+        let orbitControls;
+        let viewMode = 'inside'; // 'inside' or 'outside' views
+
+        let isUserInteracting = false,
+            onPointerDownMouseX = 0, onPointerDownMouseY = 0,
+            lon = 0, onPointerDownLon = 0,
+            lat = 0, onPointerDownLat = 0,
+            phi = 0, theta = 0;
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.layers.enable(1);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Enabling XR
+            renderer.xr.enabled = true;
+            renderer.xr.setReferenceSpaceType('local');
+
+            // Force "Inside" view AND Sphere Mode when entering VR
+            renderer.xr.addEventListener('sessionstart', () => {
+                setModeSphere();
+                document.querySelector('input[name="geometry"][value="sphere"]').checked = true;
+
+                // Force Inside View
+                if (viewMode === 'outside') {
+                    toggleView();
+                    document.querySelector('input[name="view"][value="inside"]').checked = true;
+                }
+            });
+
+            container.appendChild(renderer.domElement);
+
+            // Add "Enter VR" button to the page
+            document.body.appendChild(VRButton.createButton(renderer));
+
+            // Controls
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enabled = false;
+            orbitControls.enableDamping = true;
+
+            const loader = new THREE.TextureLoader();
+
+            // loader.load('image.jpg', (tex) => {
+            //     tex.colorSpace = THREE.SRGBColorSpace;
+            //     tex.mapping = THREE.EquirectangularReflectionMapping;
+            //     textureEquirect = tex;
+            //     if (!currentMesh) setModeSphere();
+            // });
+
+            video = document.createElement('video');
+
+            video.src = 'video.mp4';
+            video.loop = true;
+            video.muted = true;
+            video.playsInline = true;
+            video.crossOrigin = 'anonymous';
+
+            video.addEventListener('loadeddata', () => {
+                console.log('Video loaded successfully');
+            });
+
+            video.play().then(() => {
+                console.log('Video autoplay started');
+            }).catch(() => {
+                console.log('Autoplay blocked until user interaction');
+            });
+
+            const videoTexture = new THREE.VideoTexture(video);
+            videoTexture.colorSpace = THREE.SRGBColorSpace;
+            videoTexture.mapping = THREE.EquirectangularReflectionMapping;
+
+            textureEquirect = videoTexture;
+            if (!currentMesh) setModeSphere();
+
+            document.addEventListener('click', () => {
+                video.muted = false;
+                video.play();
+
+            }, { once: true });
+
+            loader.load('atlas.png', (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.magFilter = THREE.NearestFilter;
+                textureAtlas = tex;
+            });
+
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            document.addEventListener('wheel', onDocumentMouseWheel);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function setModeSphere() {
+            // TODO: Change this value to see the effect of tessellation
+            const segments = 16;  //  Changed
+            if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+            scene.background = null;
+
+            if (!textureEquirect) return;
+
+            textureEquirect.wrapS = THREE.RepeatWrapping;
+            textureEquirect.repeat.x = -1;
+
+            const geo = new THREE.SphereGeometry(500, segments, Math.floor(segments / 2));
+
+            const side = viewMode === 'inside' ? THREE.BackSide : THREE.DoubleSide;
+            const mat = new THREE.MeshBasicMaterial({ map: textureEquirect, side: side });
+
+            currentMesh = new THREE.Mesh(geo, mat);
+            scene.add(currentMesh);
+            currentMesh.geometry.type = 'SphereGeometry';
+
+        }
+
+        function setModeBox() {
+            if (currentMesh) { scene.remove(currentMesh); currentMesh = null; }
+            scene.background = null;
+
+            if (!textureAtlas) {
+                alert("Atlas texture not found. Did you put atlas.png in the same directory?");
+                return;
+            }
+
+            const box = new THREE.BoxGeometry(500, 500, 500);
+            configureBoxUVs(box);
+
+            const side = viewMode === 'inside' ? THREE.BackSide : THREE.DoubleSide;
+            const mat = new THREE.MeshBasicMaterial({ map: textureAtlas, side: side });
+
+            currentMesh = new THREE.Mesh(box, mat);
+            currentMesh.rotation.y = 0;
+            scene.add(currentMesh);
+
+        }
+
+        function configureBoxUVs(geometry) {
+            const uvs = geometry.attributes.uv;
+            // Set UVs for a face with specific rotation
+            // and switch left/right(swap uMin/uMax) to correct BackSide rendering.
+            const setFaceUVs = (faceIndex, uMin, uMax, vMin, vMax, rotation) => {
+                const offset = faceIndex * 4;
+                let coords = [
+                    { u: uMax, v: vMax }, // 0: TL -> gets Right top corner of texture (uMax, vMax)
+                    { u: uMin, v: vMax }, // 1: TR -> gets Left top corner of texture (uMin, vMax)
+                    { u: uMax, v: vMin }, // 2: BL -> gets Right bottom corner of texture (uMax, vMin)
+                    { u: uMin, v: vMin }  // 3: BR -> gets Left bottom corner of texture (uMin, vMin)
+                ];
+                let map = [0, 1, 2, 3];
+                if (rotation === 1) map = [2, 0, 3, 1];
+                if (rotation === 2) map = [3, 2, 1, 0];
+                if (rotation === 3) map = [1, 3, 0, 2];
+
+                uvs.setXY(offset + 0, coords[map[0]].u, coords[map[0]].v);
+                uvs.setXY(offset + 1, coords[map[1]].u, coords[map[1]].v);
+                uvs.setXY(offset + 2, coords[map[2]].u, coords[map[2]].v);
+                uvs.setXY(offset + 3, coords[map[3]].u, coords[map[3]].v);
+            };
+
+            const w = 1.0 / 3.0;
+
+            setFaceUVs(0, w, w * 2, 0.0, 0.5, 0); // Front (+x) 
+            setFaceUVs(1, w, w * 2, 0.5, 1.0, 3); // Back (-x)
+            setFaceUVs(2, 0.0, w, 0.5, 1.0, 0); // Top (+y)
+            setFaceUVs(3, w * 2, w * 3, 0.5, 1.0, 2); // Bottom (-y)
+
+            // TODO: Implement the remaining two faces
+            // setFaceUVs(4, ...); // Right (+z)
+            // setFaceUVs(5, ...); // Left (-z)
+            setFaceUVs(4, w * 2, w * 3, 0.0, 0.5, 0); // Right (+z)
+            setFaceUVs(5, 0.0, w, 0.0, 0.5, 0); // Left (-z)
+
+            uvs.needsUpdate = true;
+        }
+
+        function toggleView() {
+            if (viewMode === 'inside') {
+                viewMode = 'outside';
+                // Move Camera Out (Align with +x look direction, so start at -x)
+                camera.position.set(-800, 500, 0);
+                camera.lookAt(0, 0, 0);
+
+                // Enable Orbit Controls
+                orbitControls.enabled = true;
+
+                // Set DoubleSide to see shape
+                if (currentMesh) currentMesh.material.side = THREE.DoubleSide;
+
+            } else {
+                viewMode = 'inside';
+                // Reset Camera In
+                camera.position.set(0, 0, 0); // LookAt updated in render loop
+
+                // Disable Orbit
+                orbitControls.enabled = false;
+
+                // Set BackSide for inside view
+                if (currentMesh) currentMesh.material.side = THREE.BackSide;
+
+            }
+        }
+
+        function resetView() {
+            lon = 0;
+            lat = 0;
+            if (viewMode === 'outside') {
+                camera.position.set(-1500, 500, 0);
+                camera.lookAt(0, 0, 0);
+                orbitControls.reset();
+            }
+        }
+
+        // Event Listeners for Option Controls
+        document.querySelectorAll('input[name="geometry"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'sphere') setModeSphere();
+                else setModeBox();
+            });
+        });
+
+        document.querySelectorAll('input[name="view"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const targetMode = e.target.value;
+                if (viewMode !== targetMode) toggleView();
+            });
+        });
+
+        document.getElementById('Reset').addEventListener('click', (e) => { e.preventDefault(); resetView(); });
+
+
+        // Animation Loop needed for WebXR
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            if (orbitControls.enabled) orbitControls.update();
+
+            if (viewMode === 'inside' && !renderer.xr.isPresenting) {
+                updateLookAt();
+            }
+            renderer.render(scene, camera);
+        }
+
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onPointerDown(event) {
+            if (viewMode === 'outside') return; // when outside, use orbit controls
+            if (event.isPrimary === false || event.target.tagName !== 'CANVAS') return;
+            isUserInteracting = true;
+            onPointerDownMouseX = event.clientX;
+            onPointerDownMouseY = event.clientY;
+            onPointerDownLon = lon;
+            onPointerDownLat = lat;
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerUp);
+        }
+
+        function onPointerMove(event) {
+            if (event.isPrimary === false) return;
+            lon = (onPointerDownMouseX - event.clientX) * 0.1 + onPointerDownLon;
+            lat = (event.clientY - onPointerDownMouseY) * 0.1 + onPointerDownLat;
+        }
+
+        function onPointerUp() {
+            isUserInteracting = false;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+        }
+
+        function onDocumentMouseWheel(event) {
+            const fov = camera.fov + event.deltaY * 0.05;
+            camera.fov = THREE.MathUtils.clamp(fov, 10, 75);
+            camera.updateProjectionMatrix();
+        }
+
+        function updateLookAt() {
+            lat = Math.max(-85, Math.min(85, lat));
+            phi = THREE.MathUtils.degToRad(90 - lat);
+            theta = THREE.MathUtils.degToRad(lon);
+            const x = 500 * Math.sin(phi) * Math.cos(theta);
+            const y = 500 * Math.cos(phi);
+            const z = 500 * Math.sin(phi) * Math.sin(theta);
+            camera.lookAt(x, y, z);
+        }
+
+
+
+    </script>
+</body>
+
+</html>
