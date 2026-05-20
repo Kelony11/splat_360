@@ -1,4 +1,4 @@
-# Splat360 🌐
+# Splat360 🫟
 
 **Splat360** is a browser-based immersive graphics project built with **Three.js** and **3D Gaussian Splatting**. It features a 360 panorama viewer, 360 video playback on a sphere, custom UV mapping on a cube, and a hybrid splat scene with added colored geometry.
 
